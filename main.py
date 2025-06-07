@@ -3,25 +3,18 @@ from discord.ext import commands, tasks
 import json
 import os
 from datetime import datetime, timedelta
-import pytz
 import random
 
 intents = discord.Intents.default()
-intents.messages = True
-intents.guilds = True
 intents.message_content = True
 intents.members = True
-
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-DATA_FILE = 'user_data.json'
-KST = pytz.timezone('Asia/Seoul')
-
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w') as f:
-        json.dump({}, f)
+DATA_FILE = 'data.json'
 
 def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {}
     with open(DATA_FILE, 'r') as f:
         return json.load(f)
 
@@ -29,182 +22,174 @@ def save_data(data):
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-def get_display_name(ctx, user_id):
-    member = ctx.guild.get_member(int(user_id))
-    return member.display_name if member else "Unknown"
-
-def get_user_data(user_id):
-    data = load_data()
-    if str(user_id) not in data:
-        data[str(user_id)] = {"points": 0, "last_daily": "1970-01-01"}
-        save_data(data)
-    return data[str(user_id)]
-
-def update_user_data(user_id, key, value):
-    data = load_data()
-    if str(user_id) not in data:
-        data[str(user_id)] = {"points": 0, "last_daily": "1970-01-01"}
-    data[str(user_id)][key] = value
-    save_data(data)
+user_data = load_data()
 
 @bot.event
 async def on_ready():
-    print(f'봇 실행됨: {bot.user}')
+    print(f'✅ 봇 실행됨: {bot.user.name}')
+    reset_attendance.start()
+
+@tasks.loop(minutes=1)
+async def reset_attendance():
+    now = datetime.utcnow() + timedelta(hours=9)  # 한국시간
+    if now.hour == 0 and now.minute == 0:
+        for uid in user_data:
+            user_data[uid]["attended"] = False
+        save_data(user_data)
+        print("🕛 자정 출석 초기화 완료")
+
+def get_user_data(user):
+    uid = str(user.id)
+    if uid not in user_data:
+        user_data[uid] = {"points": 0, "attended": False}
+    return user_data[uid]
 
 @bot.command()
 async def 출석(ctx):
-    user_id = str(ctx.author.id)
-    data = load_data()
-    now = datetime.now(KST)
-    today_str = now.strftime('%Y-%m-%d')
-    last_daily_str = data.get(user_id, {}).get("last_daily", "1970-01-01")
-    last_daily = datetime.strptime(last_daily_str, '%Y-%m-%d')
-
-    if last_daily.date() == now.date():
-        await ctx.send(f"{ctx.author.mention} 이미 출석했습니다!")
-    else:
-        user_data = get_user_data(user_id)
-        user_data["points"] += 1000
-        update_user_data(user_id, "points", user_data["points"])
-        update_user_data(user_id, "last_daily", today_str)
-        await ctx.send(f"{ctx.author.mention} 출석 완료! 1,000포인트 지급되었습니다.")
+    user = get_user_data(ctx.author)
+    if user.get("attended", False):
+        await ctx.send("이미 오늘 출석하셨습니다!")
+        return
+    user["points"] += 100
+    user["attended"] = True
+    save_data(user_data)
+    await ctx.send(f"{ctx.author.display_name}님 출석 완료! ⭐ 100포인트 지급!")
 
 @bot.command()
 async def 포인트(ctx):
-    user_data = get_user_data(ctx.author.id)
-    await ctx.send(f"{ctx.author.mention} 현재 포인트: {user_data['points']}P")
+    user = get_user_data(ctx.author)
+    await ctx.send(f"{ctx.author.display_name}님의 포인트: 💰 {user['points']}P")
 
 @bot.command()
+@commands.has_permissions(administrator=True)
 async def 지급(ctx, member: discord.Member, amount: int):
-    if ctx.author.guild_permissions.administrator:
-        user_data = get_user_data(member.id)
-        user_data['points'] += amount
-        update_user_data(member.id, 'points', user_data['points'])
-        await ctx.send(f"{member.mention}에게 {amount}포인트를 지급했습니다.")
-    else:
-        await ctx.send("관리자만 사용할 수 있는 명령어입니다.")
+    user = get_user_data(member)
+    user['points'] += amount
+    save_data(user_data)
+    await ctx.send(f"{member.display_name}님께 💸 {amount}포인트를 지급했습니다!")
 
 @bot.command()
 async def 랭킹(ctx):
-    data = load_data()
-    sorted_users = sorted(data.items(), key=lambda x: x[1].get('points', 0), reverse=True)[:10]
-    rank_msg = "\n".join([f"{i+1}. {get_display_name(ctx, uid)}: {info['points']}P" for i, (uid, info) in enumerate(sorted_users)])
-    await ctx.send(f"🏆 포인트 랭킹 🏆\n{rank_msg}")
+    sorted_users = sorted(user_data.items(), key=lambda x: x[1]["points"], reverse=True)
+    result = []
+    for i, (uid, data) in enumerate(sorted_users[:10], start=1):
+        member = ctx.guild.get_member(int(uid))
+        name = member.display_name if member else f"탈퇴자({uid})"
+        result.append(f"{i}위 🏆 {name} - {data['points']}P")
+    await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
 
 @bot.command()
 async def 상점(ctx):
-    shop_items = {
-        "치킨": 30000,
-        "500만 메소": 30000,
-        "피자": 45000,
-        "족발": 60000,
-        "길드 명찰": 10000
-    }
-    msg = "\n".join([f"{item}: {price}P" for item, price in shop_items.items()])
-    await ctx.send(f"🛍️ 상점 목록\n{msg}")
+    await ctx.send(
+        "**🎁 포인트 상점**\n"
+        "🍗 치킨 기프티콘 - 30,000P (!구매 치킨)\n"
+        "💰 500만 메소 - 30,000P (!구매 메소)\n"
+        "🍕 피자 - 45,000P (!구매 피자)\n"
+        "🐷 족발 - 60,000P (!구매 족발)\n"
+        "📛 길드 명찰 - 10,000P (!구매 명찰)"
+    )
 
 @bot.command()
-async def 구매(ctx, *, item):
-    shop_items = {
-        "치킨": 30000,
-        "500만 메소": 30000,
-        "피자": 45000,
-        "족발": 60000,
-        "길드 명찰": 10000
+async def 구매(ctx, 항목):
+    가격표 = {
+        "치킨": 30000, "메소": 30000,
+        "피자": 45000, "족발": 60000,
+        "명찰": 10000
     }
-    user_data = get_user_data(ctx.author.id)
-    if item in shop_items:
-        cost = shop_items[item]
-        if user_data['points'] >= cost:
-            user_data['points'] -= cost
-            update_user_data(ctx.author.id, 'points', user_data['points'])
-            await ctx.send(f"{ctx.author.mention} {item} 구매 완료! ({cost}P 차감)")
-        else:
-            await ctx.send(f"{ctx.author.mention} 포인트가 부족합니다. ({user_data['points']}P 보유)")
-    else:
-        await ctx.send("해당 상품이 없습니다.")
-
-@bot.command()
-async def 슬롯(ctx, amount: int):
-    symbols = ['🍒', '🍋', '🔔']
-    user_data = get_user_data(ctx.author.id)
-    if user_data['points'] < amount:
-        await ctx.send("포인트가 부족합니다.")
+    항목 = 항목.strip()
+    if 항목 not in 가격표:
+        await ctx.send("존재하지 않는 상품입니다!")
         return
+    user = get_user_data(ctx.author)
+    가격 = 가격표[항목]
+    if user['points'] < 가격:
+        await ctx.send("포인트가 부족합니다!")
+        return
+    user['points'] -= 가격
+    save_data(user_data)
+    await ctx.send(f"{ctx.author.display_name}님이 {항목}을(를) 구매했습니다! 🎉")
+
+@bot.command()
+async def 슬롯(ctx, 금액: int):
+    user = get_user_data(ctx.author)
+    if 금액 <= 0 or user["points"] < 금액:
+        await ctx.send("❌ 잘못된 금액이거나 포인트가 부족합니다.")
+        return
+    symbols = ['🍒', '🍋', '🔔', '🍀', '💎']
     result = [random.choice(symbols) for _ in range(3)]
+    await ctx.send(f"{' | '.join(result)}")
     if result.count(result[0]) == 3:
-        winnings = amount * 5
-        msg = "🎉 잭팟! 5배 당첨!"
-    elif len(set(result)) == 2:
-        winnings = amount * 2
-        msg = "✨ 2배 당첨!"
+        배수 = 5
+        winnings = 금액 * 배수
+        user["points"] += winnings
+        await ctx.send(f"🎰 JACKPOT! {배수}배 당첨! +{winnings}P")
+    elif result.count(result[0]) == 2 or result.count(result[1]) == 2:
+        배수 = 2
+        winnings = 금액 * 배수
+        user["points"] += winnings
+        await ctx.send(f"🎉 2배 당첨! +{winnings}P")
     else:
-        winnings = 0
-        msg = "꽝! 다음 기회에..."
-    net_change = winnings - amount
-    user_data['points'] += net_change
-    update_user_data(ctx.author.id, 'points', user_data['points'])
-    await ctx.send(f"{' | '.join(result)}\n{msg} 현재 포인트: {user_data['points']}P")
+        user["points"] -= 금액
+        await ctx.send(f"😭 꽝! -{금액}P")
+    save_data(user_data)
 
 @bot.command()
-async def 홀짝(ctx, guess: str, amount: int):
-    user_data = get_user_data(ctx.author.id)
-    if user_data['points'] < amount:
-        await ctx.send("포인트가 부족합니다.")
+async def 주사위(ctx, 선택: int):
+    if 선택 < 1 or 선택 > 6:
+        await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
         return
-    result = random.choice(['홀', '짝'])
-    if guess == result:
-        winnings = amount * 2
-        msg = f"정답! {winnings}P 획득"
+    user = get_user_data(ctx.author)
+    금액 = 1000
+    if user['points'] < 금액:
+        await ctx.send("포인트가 부족합니다!")
+        return
+    결과 = random.randint(1, 6)
+    await ctx.send(f"🎲 결과: {결과}")
+    if 선택 == 결과:
+        user['points'] += 금액 * 6
+        await ctx.send(f"🎯 정답! +{금액*6}P")
     else:
-        winnings = 0
-        msg = f"틀렸습니다! 정답은 {result}"
-    net_change = winnings - amount
-    user_data['points'] += net_change
-    update_user_data(ctx.author.id, 'points', user_data['points'])
-    await ctx.send(f"{msg} 현재 포인트: {user_data['points']}P")
+        user['points'] -= 금액
+        await ctx.send(f"❌ 실패! -{금액}P")
+    save_data(user_data)
 
 @bot.command()
-async def 주사위(ctx, guess: int, amount: int):
-    if not (1 <= guess <= 6):
-        await ctx.send("1~6 사이의 숫자를 입력해주세요.")
+async def 홀짝(ctx, 선택, 금액: int):
+    if 선택 not in ['홀', '짝']:
+        await ctx.send("홀 또는 짝만 선택 가능!")
         return
-    user_data = get_user_data(ctx.author.id)
-    if user_data['points'] < amount:
-        await ctx.send("포인트가 부족합니다.")
+    user = get_user_data(ctx.author)
+    if 금액 <= 0 or user['points'] < 금액:
+        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
         return
-    roll = random.randint(1, 6)
-    if guess == roll:
-        winnings = amount * 6
-        msg = f"🎲 정답! 주사위: {roll}, {winnings}P 획득!"
+    결과 = random.choice(['홀', '짝'])
+    await ctx.send(f"🎯 결과: {결과}")
+    if 선택 == 결과:
+        user['points'] += 금액 * 2
+        await ctx.send(f"🎉 정답! +{금액*2}P")
     else:
-        winnings = 0
-        msg = f"주사위: {roll}, 꽝!"
-    net_change = winnings - amount
-    user_data['points'] += net_change
-    update_user_data(ctx.author.id, 'points', user_data['points'])
-    await ctx.send(f"{msg} 현재 포인트: {user_data['points']}P")
+        user['points'] -= 금액
+        await ctx.send(f"❌ 실패! -{금액}P")
+    save_data(user_data)
 
 @bot.command()
-async def 경마(ctx, horse: int, amount: int):
-    if not (1 <= horse <= 4):
-        await ctx.send("1~4번 말 중에서 선택해주세요.")
+async def 경마(ctx, 말번호: int, 금액: int):
+    if 말번호 not in [1, 2, 3, 4]:
+        await ctx.send("1~4번 말 중 선택하세요!")
         return
-    user_data = get_user_data(ctx.author.id)
-    if user_data['points'] < amount:
-        await ctx.send("포인트가 부족합니다.")
+    user = get_user_data(ctx.author)
+    if 금액 <= 0 or user['points'] < 금액:
+        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
         return
-    winner = random.randint(1, 4)
-    if horse == winner:
-        winnings = amount * 4
-        msg = f"🏇 {winner}번 말 우승! {winnings}P 획득!"
+    우승 = random.randint(1, 4)
+    await ctx.send(f"🏇 경주 시작! 결과: {우승}번 말 우승!")
+    if 말번호 == 우승:
+        user['points'] += 금액 * 4
+        await ctx.send(f"🎉 승리! +{금액*4}P")
     else:
-        winnings = 0
-        msg = f"{winner}번 말이 우승했습니다. 꽝!"
-    net_change = winnings - amount
-    user_data['points'] += net_change
-    update_user_data(ctx.author.id, 'points', user_data['points'])
-    await ctx.send(f"{msg} 현재 포인트: {user_data['points']}P")
+        user['points'] -= 금액
+        await ctx.send(f"😭 패배! -{금액}P")
+    save_data(user_data)
 
-# 환경변수 TOKEN을 이용한 실행
+# 디스코드 토큰 실행 (환경변수 TOKEN에서 불러오기)
 bot.run(os.getenv("TOKEN"))
