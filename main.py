@@ -5,12 +5,14 @@ import os
 from datetime import datetime, timedelta
 import random
 
+# 현재 파일의 디렉토리 경로를 기준으로 data.json 경로 지정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, 'data.json')
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
-
-DATA_FILE = 'data.json'
 
 def load_data():
     if not os.path.exists(DATA_FILE):
