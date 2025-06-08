@@ -90,21 +90,26 @@ async def 슬롯(ctx, 금액: int):
         await ctx.send("❌ 잘못된 금액이거나 포인트가 부족합니다.")
         return
 
-    # 봇이 이길 확률 설정: 55% 확률로 꽝
-    if random.random() < 0.55:
-        user["points"] -= 금액
-        save_data(user_data)
-        await ctx.send(f"🍒 | 🍋 | 🔔\n😭 꽝! -{금액}P")
-        return
-
-    # 당첨 시 랜덤 3개 심볼 생성 (무조건 일치로 7배 지급)
     symbols = ['🍒', '🍋', '🔔', '🍀', '💎']
-    selected = random.choice(symbols)
-    result = [selected] * 3
-    winnings = 금액 * 7
-    user["points"] += winnings
+    result = [random.choice(symbols) for _ in range(3)]
+    await ctx.send(f"{' | '.join(result)}")
+
+    # 3개 심볼이 일치할 경우만 당첨
+    if result[0] == result[1] == result[2]:
+        # 보정: 90% 확률로 유저가 이김, 10% 확률로 실패 처리
+        if random.random() < 0.9:
+            배수 = 7
+            winnings = 금액 * 배수
+            user["points"] += winnings
+            await ctx.send(f"🎰 JACKPOT! {배수}배 당첨! +{winnings}P")
+        else:
+            user["points"] -= 금액
+            await ctx.send(f"😢 아쉽게도 보정 실패! -{금액}P")
+    else:
+        user["points"] -= 금액
+        await ctx.send(f"😭 꽝! -{금액}P")
+
     save_data(user_data)
-    await ctx.send(f"{' | '.join(result)}\n🎰 JACKPOT! 7배 당첨! +{winnings}P")
 
 
 import random
@@ -139,77 +144,64 @@ async def 홀짝(ctx, 선택, 금액: int):
     save_data(user_data)
 
 
-import random
+# ✅ 경마 (우승 확률 1/4, 그 중 10%는 고의 미당첨)
+@bot.command()
+async def 경마(ctx, 말번호: int, 금액: int):
+    if 말번호 not in [1, 2, 3, 4]:
+        await ctx.send("1~4번 말 중 선택하세요!")
+        return
+    user = get_user_data(ctx.author)
+    if 금액 <= 0 or user['points'] < 금액:
+        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
+        return
 
-# 유저가 이길 확률: 45%, 봇이 이길 확률: 55%
-def biased_dice_result(user_choice):
-    if random.random() < 0.55:
-        # 봇이 이김 → 다른 숫자 반환
-        options = [i for i in range(1, 7) if i != user_choice]
-        return random.choice(options)
+    # 고의 실패 보정 로직
+    win_chance = random.random()  # 0.0 ~ 1.0
+    if win_chance < 0.25 * 0.9:  # 약 22.5% 확률
+        우승 = 말번호
     else:
-        # 유저가 이김 → 선택한 숫자 그대로 반환
-        return user_choice
+        # 다른 말이 우승
+        말후보 = [i for i in [1,2,3,4] if i != 말번호]
+        우승 = random.choice(말후보)
 
+    await ctx.send(f"🏇 경주 시작! 결과: {우승}번 말 우승!")
+    if 말번호 == 우승:
+        user['points'] += 금액 * 4
+        await ctx.send(f"🎉 승리! +{금액*4}P")
+    else:
+        user['points'] -= 금액
+        await ctx.send(f"😭 패배! -{금액}P")
+    save_data(user_data)
+
+
+# ✅ 주사위 (당첨 확률 1/6, 그 중 10%는 고의 미당첨)
 @bot.command()
 async def 주사위(ctx, 선택: int, 금액: int):
     if 선택 < 1 or 선택 > 6:
         await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
         return
-
     user = get_user_data(ctx.author)
     if 금액 <= 0 or user['points'] < 금액:
         await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
         return
 
-    결과 = biased_dice_result(선택)
-    await ctx.send(f"🎲 결과: {결과}")
+    # 고의 실패 보정 로직
+    win_chance = random.random()
+    if win_chance < (1/6) * 0.9:  # 약 15.03%
+        결과 = 선택
+    else:
+        후보 = [i for i in range(1, 7) if i != 선택]
+        결과 = random.choice(후보)
 
+    await ctx.send(f"🎲 결과: {결과}")
     if 선택 == 결과:
         user['points'] += 금액 * 6
-        await ctx.send(f"🎯 정답! +{금액 * 6}P")
+        await ctx.send(f"🎯 정답! +{금액*6}P")
     else:
         user['points'] -= 금액
         await ctx.send(f"❌ 실패! -{금액}P")
-
     save_data(user_data)
 
-
-
-import random
-
-# 유저가 이길 확률 45%, 봇이 이길 확률 55%
-def biased_horse_result(user_choice):
-    if random.random() < 0.55:
-        # 봇 승리 → 유저가 선택한 번호를 제외한 말 중에서 무작위 선택
-        options = [i for i in range(1, 5) if i != user_choice]
-        return random.choice(options)
-    else:
-        # 유저 승리 → 유저가 선택한 말 우승
-        return user_choice
-
-@bot.command()
-async def 경마(ctx, 말번호: int, 금액: int):
-    if 말번호 not in [1, 2, 3, 4]:
-        await ctx.send("1~4번 말 중 하나를 선택하세요!")
-        return
-
-    user = get_user_data(ctx.author)
-    if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
-        return
-
-    우승 = biased_horse_result(말번호)
-    await ctx.send(f"🏇 경주 시작! 결과: {우승}번 말이 우승했습니다!")
-
-    if 말번호 == 우승:
-        user['points'] += 금액 * 4
-        await ctx.send(f"🎉 승리! +{금액 * 4}P")
-    else:
-        user['points'] -= 금액
-        await ctx.send(f"😭 패배! -{금액}P")
-
-    save_data(user_data)
 
 
 # 디스코드 토큰 실행 (환경변수 TOKEN에서 불러오기)
