@@ -112,49 +112,6 @@ async def 구매(ctx, 항목):
     await ctx.send(f"{ctx.author.display_name}님이 {항목}을(를) 구매했습니다! 🎉")
 
 @bot.command()
-async def 슬롯(ctx, 금액: int):
-    user = get_user_data(ctx.author)
-    if 금액 <= 0 or user["points"] < 금액:
-        await ctx.send("❌ 잘못된 금액이거나 포인트가 부족합니다.")
-        return
-    symbols = ['🍒', '🍋', '🔔', '🍀', '💎']
-    result = [random.choice(symbols) for _ in range(3)]
-    await ctx.send(f"{' | '.join(result)}")
-    if result.count(result[0]) == 3:
-        배수 = 5
-        winnings = 금액 * 배수
-        user["points"] += winnings
-        await ctx.send(f"🎰 JACKPOT! {배수}배 당첨! +{winnings}P")
-    elif result.count(result[0]) == 2 or result.count(result[1]) == 2:
-        배수 = 2
-        winnings = 금액 * 배수
-        user["points"] += winnings
-        await ctx.send(f"🎉 2배 당첨! +{winnings}P")
-    else:
-        user["points"] -= 금액
-        await ctx.send(f"😭 꽝! -{금액}P")
-    save_data(user_data)
-
-@bot.command()
-async def 주사위(ctx, 선택: int, 금액: int):
-    if 선택 < 1 or 선택 > 6:
-        await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
-        return
-    user = get_user_data(ctx.author)
-    if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("포인트가 부족합니다!")
-        return
-    결과 = random.randint(1, 6)
-    await ctx.send(f"🎲 결과: {결과}")
-    if 선택 == 결과:
-        user['points'] += 금액 * 6
-        await ctx.send(f"🎯 정답! +{금액*6}P")
-    else:
-        user['points'] -= 금액
-        await ctx.send(f"❌ 실패! -{금액}P")
-    save_data(user_data)
-
-@bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
     if 선택 not in ['홀', '짝']:
         await ctx.send("홀 또는 짝만 선택 가능!")
@@ -166,8 +123,28 @@ async def 홀짝(ctx, 선택, 금액: int):
     결과 = random.choice(['홀', '짝'])
     await ctx.send(f"🎯 결과: {결과}")
     if 선택 == 결과:
-        user['points'] += 금액 * 2
-        await ctx.send(f"🎉 정답! +{금액*2}P")
+        user['points'] += int(금액 * 1.9)
+        await ctx.send(f"🎉 정답! +{int(금액 * 1.9)}P")
+    else:
+        user['points'] -= 금액
+        await ctx.send(f"❌ 실패! -{금액}P")
+    save_data(user_data)
+
+@bot.command()
+async def 주사위(ctx, 선택: int):
+    if 선택 < 1 or 선택 > 6:
+        await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
+        return
+    user = get_user_data(ctx.author)
+    금액 = 1000
+    if user['points'] < 금액:
+        await ctx.send("포인트가 부족합니다!")
+        return
+    결과 = random.randint(1, 6)
+    await ctx.send(f"🎲 결과: {결과}")
+    if 선택 == 결과:
+        user['points'] += 금액 * 5
+        await ctx.send(f"🎯 정답! +{금액 * 5}P")
     else:
         user['points'] -= 금액
         await ctx.send(f"❌ 실패! -{금액}P")
@@ -185,12 +162,12 @@ async def 경마(ctx, 말번호: int, 금액: int):
     우승 = random.randint(1, 4)
     await ctx.send(f"🏇 경주 시작! 결과: {우승}번 말 우승!")
     if 말번호 == 우승:
-        user['points'] += 금액 * 4
-        await ctx.send(f"🎉 승리! +{금액*4}P")
+        user['points'] += 금액 * 3
+        await ctx.send(f"🎉 승리! +{금액 * 3}P")
     else:
         user['points'] -= 금액
         await ctx.send(f"😭 패배! -{금액}P")
     save_data(user_data)
 
-# 디스코드 토큰 실행 (환경변수 TOKEN에서 불러오기)
 bot.run(os.getenv("TOKEN"))
+
