@@ -84,6 +84,28 @@ async def 랭킹(ctx):
     await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
 
 @bot.command()
+async def 슬롯(ctx, 금액: int):
+    user = get_user_data(ctx.author)
+    if 금액 <= 0 or user["points"] < 금액:
+        await ctx.send("❌ 잘못된 금액이거나 포인트가 부족합니다.")
+        return
+
+    symbols = ['🍒', '🍋', '🔔', '🍀', '💎']
+    result = [random.choice(symbols) for _ in range(3)]
+    await ctx.send(f"{' | '.join(result)}")
+
+    if result.count(result[0]) == 3:
+        배수 = 7  # 세 개 일치 시 7배
+        winnings = 금액 * 배수
+        user["points"] += winnings
+        await ctx.send(f"🎰 JACKPOT! {배수}배 당첨! +{winnings}P")
+    else:
+        user["points"] -= 금액
+        await ctx.send(f"😭 꽝! -{금액}P")
+
+    save_data(user_data)
+
+@bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
     if 선택 not in ['홀', '짝']:
         await ctx.send("홀 또는 짝만 선택 가능!")
