@@ -136,13 +136,12 @@ async def 슬롯(ctx, 금액: int):
     save_data(user_data)
 
 @bot.command()
-async def 주사위(ctx, 선택: int):
+async def 주사위(ctx, 선택: int, 금액: int):
     if 선택 < 1 or 선택 > 6:
         await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
         return
     user = get_user_data(ctx.author)
-    금액 = 1000
-    if user['points'] < 금액:
+    if 금액 <= 0 or user['points'] < 금액:
         await ctx.send("포인트가 부족합니다!")
         return
     결과 = random.randint(1, 6)
