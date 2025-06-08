@@ -32,7 +32,7 @@ async def on_ready():
     reset_attendance.start()
 
 @tasks.loop(minutes=1)
-def reset_attendance():
+async def reset_attendance():  # <-- 반드시 async def 이어야 함
     now = datetime.utcnow() + timedelta(hours=9)  # 한국시간
     if now.hour == 0 and now.minute == 0:
         for uid in user_data:
