@@ -78,7 +78,7 @@ async def 랭킹(ctx):
             member = await ctx.guild.fetch_member(member_id)
             name = member.display_name
         except:
-            name = f"탈퇴자({user['_id']})"
+            continue  # 탈퇴자는 아예 스킵
         result.append(f"{i}위 🏆 {name} - {user['points']}P")
     await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
 
