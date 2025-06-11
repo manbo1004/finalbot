@@ -72,15 +72,18 @@ async def 지급(ctx, member: discord.Member, amount: int):
 async def 랭킹(ctx):
     top_users = users_col.find().sort("points", -1).limit(10)
     result = []
-    for i, user in enumerate(top_users, start=1):
+    i = 1  # 순위용 수동 인덱스
+    for user in top_users:
         try:
             member_id = int(user['_id'])
             member = await ctx.guild.fetch_member(member_id)
             name = member.display_name
         except:
-            continue  # 탈퇴자는 아예 스킵
+            continue  # 탈퇴자 또는 조회 실패한 유저는 건너뜀
         result.append(f"{i}위 🏆 {name} - {user['points']}P")
+        i += 1
     await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
+
 
 
 @bot.command()
