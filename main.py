@@ -73,9 +73,12 @@ async def 랭킹(ctx):
     top_users = users_col.find().sort("points", -1).limit(10)
     result = []
     for i, user in enumerate(top_users, start=1):
-        uid = str(user['_id'])  # <-- 여기 중요!!
-        member = ctx.guild.get_member(int(uid))
-        name = member.display_name if member else f"탈퇴자({uid})"
+        try:
+            member_id = int(user['_id'])
+            member = await ctx.guild.fetch_member(member_id)
+            name = member.display_name
+        except:
+            name = f"탈퇴자({user['_id']})"
         result.append(f"{i}위 🏆 {name} - {user['points']}P")
     await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
 
