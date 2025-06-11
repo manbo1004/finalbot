@@ -114,9 +114,9 @@ async def 슬롯(ctx, 금액: int):
 
 import random
 
-# 유저가 이길 확률: 45% (봇이 이길 확률: 55%)
 def biased_outcome():
-    return random.random() >= 0.55
+    return random.random() < 0.49  # 유저 승률 49%
+
 
 @bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
@@ -156,13 +156,12 @@ async def 경마(ctx, 말번호: int, 금액: int):
         return
 
     # 고의 실패 보정 로직
-    win_chance = random.random()  # 0.0 ~ 1.0
-    if win_chance < 0.25 * 0.9:  # 약 22.5% 확률
-        우승 = 말번호
-    else:
-        # 다른 말이 우승
-        말후보 = [i for i in [1,2,3,4] if i != 말번호]
-        우승 = random.choice(말후보)
+win_chance = random.random()  # 0.0 ~ 1.0
+if win_chance < 0.25 * 0.95:  # ✅ 보정률 95%로 완화 (실당첨률 약 23.75%)
+    우승 = 말번호
+else:
+    말후보 = [i for i in [1, 2, 3, 4] if i != 말번호]
+    우승 = random.choice(말후보)
 
     await ctx.send(f"🏇 경주 시작! 결과: {우승}번 말 우승!")
     if 말번호 == 우승:
@@ -174,32 +173,64 @@ async def 경마(ctx, 말번호: int, 금액: int):
     save_data(user_data)
 
 
-# ✅ 주사위 (당첨 확률 1/6, 그 중 10%는 고의 미당첨)
+# ✅ 주사위 (당첨 확률 1/6, 그 중 5%는 고의 미당첨)
 @bot.command()
 async def 주사위(ctx, 선택: int, 금액: int):
     if 선택 < 1 or 선택 > 6:
         await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
         return
+
     user = get_user_data(ctx.author)
     if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
+        await ctx.send("❌ 포인트가 부족하거나 잘못된 금액입니다!")
         return
 
-    # 고의 실패 보정 로직
+    # 고의 실패 보정 로직 (보정률 95%)
     win_chance = random.random()
-    if win_chance < (1/6) * 0.9:  # 약 15.03%
+    if win_chance < (1/6) * 0.95:  # ✅ 실당첨률 약 15.83%
         결과 = 선택
     else:
         후보 = [i for i in range(1, 7) if i != 선택]
         결과 = random.choice(후보)
 
     await ctx.send(f"🎲 결과: {결과}")
+
     if 선택 == 결과:
         user['points'] += 금액 * 6
         await ctx.send(f"🎯 정답! +{금액*6}P")
     else:
         user['points'] -= 금액
         await ctx.send(f"❌ 실패! -{금액}P")
+
+    save_data(user_data)
+
+# 전역 변수: 쿠폰 사용 여부 기록용
+used_coupons = {}  # {user_id: [사용한_쿠폰들]}
+
+@bot.command()
+async def 쿠폰(ctx, 쿠폰코드: str):
+    user = get_user_data(ctx.author)
+    user_id = str(ctx.author.id)
+
+    # 쿠폰명은 딱 하나: sorryhosu
+    if 쿠폰코드 != "sorryhosu":
+        await ctx.send("❌ 존재하지 않는 쿠폰 코드입니다.")
+        return
+
+    # 이미 사용한 쿠폰인지 확인
+    if user_id in used_coupons and "sorryhosu" in used_coupons[user_id]:
+        await ctx.send("⚠️ 이미 사용한 쿠폰입니다!")
+        return
+
+    # 포인트 지급
+    user["points"] += 500
+    await ctx.send("🎁 쿠폰 적용 완료! +500P 지급되었습니다.")
+
+    # 사용 기록 저장
+    if user_id not in used_coupons:
+        used_coupons[user_id] = []
+    used_coupons[user_id].append("sorryhosu")
+
     save_data(user_data)
 
 
