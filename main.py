@@ -204,34 +204,29 @@ async def 주사위(ctx, 선택: int, 금액: int):
 
     save_data(user_data)
 
-# 전역 변수: 쿠폰 사용 여부 기록용
-used_coupons = {}  # {user_id: [사용한_쿠폰들]}
 
 @bot.command()
 async def 쿠폰(ctx, 쿠폰코드: str):
-    user = get_user_data(ctx.author)
     user_id = str(ctx.author.id)
+    user = user_data.get(user_id, {"points": 0, "used_coupons": []})
 
-    # 쿠폰명은 딱 하나: sorryhosu
     if 쿠폰코드 != "sorryhosu":
-        await ctx.send("❌ 존재하지 않는 쿠폰 코드입니다.")
+        await ctx.send("❌ 존재하지 않는 쿠폰입니다.")
         return
 
-    # 이미 사용한 쿠폰인지 확인
-    if user_id in used_coupons and "sorryhosu" in used_coupons[user_id]:
+    if "used_coupons" not in user:
+        user["used_coupons"] = []
+
+    if "sorryhosu" in user["used_coupons"]:
         await ctx.send("⚠️ 이미 사용한 쿠폰입니다!")
         return
 
-    # 포인트 지급
     user["points"] += 500
-    await ctx.send("🎁 쿠폰 적용 완료! +500P 지급되었습니다.")
-
-    # 사용 기록 저장
-    if user_id not in used_coupons:
-        used_coupons[user_id] = []
-    used_coupons[user_id].append("sorryhosu")
+    user["used_coupons"].append("sorryhosu")
+    user_data[user_id] = user
 
     save_data(user_data)
+    await ctx.send("🎁 쿠폰 적용 완료! 500P 지급되었습니다.")
 
 
 
