@@ -121,7 +121,7 @@ async def 홀짝(ctx, 선택, 금액: int):
         await ctx.send("포인트가 부족합니다!")
         return
 
-    승리 = random.random() < 0.49
+    승리 = random.random() < 0.48
     결과 = '짝' if 선택 == '홀' else '홀' if not 승리 else 선택
 
     await ctx.send(f"🎯 결과: {결과}")
