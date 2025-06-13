@@ -69,6 +69,24 @@ async def 지급(ctx, member: discord.Member, amount: int):
     await ctx.send(f"{member.display_name}님께 💸 {amount}포인트를 지급했습니다!")
 
 @bot.command()
+@commands.has_permissions(administrator=True)
+async def 차감(ctx, member: discord.Member, amount: int):
+    user = get_user_data(member)
+    
+    if amount <= 0:
+        await ctx.send("❌ 차감할 금액은 1 이상이어야 합니다.")
+        return
+
+    if user['points'] < amount:
+        await ctx.send("⚠️ 해당 유저의 포인트가 부족합니다.")
+        return
+
+    user['points'] -= amount
+    update_user_data(str(member.id), user)
+    await ctx.send(f"🚫 {member.display_name}님의 포인트에서 {amount}P 차감했습니다!")
+
+
+@bot.command()
 async def 랭킹(ctx):
     top_users = users_col.find().sort("points", -1).limit(10)
     result = []
