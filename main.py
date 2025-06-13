@@ -86,11 +86,46 @@ async def 랭킹(ctx):
 
 
 
+MAX_BET = 1000  # 게임 베팅 상한선
+
+@bot.command()
+async def 홀짝(ctx, 선택, 금액: int):
+    if 선택 not in ['홀', '짝']:
+        await ctx.send("홀 또는 짝만 선택 가능!")
+        return
+
+    if 금액 <= 0 or 금액 > MAX_BET:
+        await ctx.send(f"❌ 베팅 금액은 1P 이상 {MAX_BET}P 이하여야 합니다!")
+        return
+
+    user = get_user_data(ctx.author)
+    if user['points'] < 금액:
+        await ctx.send("포인트가 부족합니다!")
+        return
+
+    승리 = random.random() < 0.49
+    결과 = '짝' if 선택 == '홀' else '홀' if not 승리 else 선택
+
+    await ctx.send(f"🎯 결과: {결과}")
+
+    if 선택 == 결과:
+        user['points'] += 금액 * 2
+        await ctx.send(f"🎉 정답! +{금액 * 2}P")
+    else:
+        user['points'] -= 금액
+        await ctx.send(f"❌ 실패! -{금액}P")
+
+    update_user_data(str(ctx.author.id), user)
+
 @bot.command()
 async def 슬롯(ctx, 금액: int):
+    if 금액 <= 0 or 금액 > MAX_BET:
+        await ctx.send(f"❌ 베팅 금액은 1P 이상 {MAX_BET}P 이하여야 합니다!")
+        return
+
     user = get_user_data(ctx.author)
-    if 금액 <= 0 or user["points"] < 금액:
-        await ctx.send("❌ 잘못된 금액이거나 포인트가 부족합니다.")
+    if user["points"] < 금액:
+        await ctx.send("포인트가 부족합니다.")
         return
 
     symbols = ['🍒', '🍋', '🔔', '🍀', '💎']
@@ -113,38 +148,18 @@ async def 슬롯(ctx, 금액: int):
     update_user_data(str(ctx.author.id), user)
 
 @bot.command()
-async def 홀짝(ctx, 선택, 금액: int):
-    if 선택 not in ['홀', '짝']:
-        await ctx.send("홀 또는 짝만 선택 가능!")
-        return
-
-    user = get_user_data(ctx.author)
-    if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
-        return
-
-    승리 = random.random() < 0.49
-    결과 = '짝' if 선택 == '홀' else '홀' if not 승리 else 선택
-
-    await ctx.send(f"🎯 결과: {결과}")
-
-    if 선택 == 결과:
-        user['points'] += 금액 * 2
-        await ctx.send(f"🎉 정답! +{금액 * 2}P")
-    else:
-        user['points'] -= 금액
-        await ctx.send(f"❌ 실패! -{금액}P")
-
-    update_user_data(str(ctx.author.id), user)
-
-@bot.command()
 async def 경마(ctx, 말번호: int, 금액: int):
     if 말번호 not in [1, 2, 3, 4]:
         await ctx.send("1~4번 말 중 선택하세요!")
         return
+
+    if 금액 <= 0 or 금액 > MAX_BET:
+        await ctx.send(f"❌ 베팅 금액은 1P 이상 {MAX_BET}P 이하여야 합니다!")
+        return
+
     user = get_user_data(ctx.author)
-    if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("포인트가 부족하거나 잘못된 금액입니다!")
+    if user['points'] < 금액:
+        await ctx.send("포인트가 부족합니다!")
         return
 
     win_chance = random.random()
@@ -161,6 +176,7 @@ async def 경마(ctx, 말번호: int, 금액: int):
     else:
         user['points'] -= 금액
         await ctx.send(f"😭 패배! -{금액}P")
+
     update_user_data(str(ctx.author.id), user)
 
 @bot.command()
@@ -169,9 +185,13 @@ async def 주사위(ctx, 선택: int, 금액: int):
         await ctx.send("1부터 6 사이의 숫자를 선택하세요!")
         return
 
+    if 금액 <= 0 or 금액 > MAX_BET:
+        await ctx.send(f"❌ 베팅 금액은 1P 이상 {MAX_BET}P 이하여야 합니다!")
+        return
+
     user = get_user_data(ctx.author)
-    if 금액 <= 0 or user['points'] < 금액:
-        await ctx.send("❌ 포인트가 부족하거나 잘못된 금액입니다!")
+    if user['points'] < 금액:
+        await ctx.send("❌ 포인트가 부족합니다!")
         return
 
     win_chance = random.random()
