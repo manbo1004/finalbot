@@ -105,23 +105,36 @@ async def 랭킹(ctx):
 from datetime import datetime, timedelta, timezone
 
 KST = timezone(timedelta(hours=9))
-today_str = datetime.now(KST).strftime('%Y-%m-%d')
 
-# 일일 수익 초기화
-if user.get('last_earn_date') != today_str:
-    user['daily_earnings'] = 0
-    user['last_earn_date'] = today_str
+@bot.command()
+async def 예시게임(ctx, 금액: int):
+    user = get_user_data(ctx.author)
 
-# 금액 유효성 검사
-if 금액 < 100 or 금액 > 1000 or 금액 % 100 != 0:
-    await ctx.send("⚠️ 베팅은 100P 단위이며, 100P 이상 1000P 이하만 가능합니다!")
-    return
+    # ✅ 일일 수익 초기화
+    today_str = datetime.now(KST).strftime('%Y-%m-%d')
+    if user.get('last_earn_date') != today_str:
+        user['daily_earnings'] = 0
+        user['last_earn_date'] = today_str
 
-# 수익 제한 확인 (이겼을 경우 수익만큼 제한)
-예상_수익 = 금액  # 예: 2배 게임이면 수익만큼
-if user['daily_earnings'] + 예상_수익 > 10000:
-    await ctx.send("🚫 오늘은 더 이상 수익을 얻을 수 없습니다. (일일 제한 10,000P)")
-    return
+    # ✅ 금액 유효성 검사
+    if 금액 < 100 or 금액 > 1000 or 금액 % 100 != 0:
+        await ctx.send("⚠️ 베팅은 100P 단위이며, 100P 이상 1000P 이하만 가능합니다!")
+        return
+
+    # ✅ 수익 제한 검사 (예상 수익만큼 제한)
+    예상_수익 = 금액  # 2배 게임일 경우 수익만 계산
+    if user['daily_earnings'] + 예상_수익 > 10000:
+        await ctx.send("🚫 오늘은 더 이상 수익을 얻을 수 없습니다. (일일 제한 10,000P)")
+        return
+
+    # 🟢 게임 실행 이후
+    # 예: 승리했다고 가정
+    user['points'] += 금액 * 2
+    user['daily_earnings'] += 예상_수익
+    await ctx.send(f"🎉 승리! +{금액 * 2}P 획득")
+
+    update_user_data(str(ctx.author.id), user)
+
 
 @bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
