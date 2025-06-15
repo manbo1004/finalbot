@@ -102,9 +102,26 @@ async def 랭킹(ctx):
         i += 1
     await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
 
+from datetime import datetime, timedelta, timezone
 
+KST = timezone(timedelta(hours=9))
+today_str = datetime.now(KST).strftime('%Y-%m-%d')
 
-MAX_BET = 1000  # 게임 베팅 상한선
+# 일일 수익 초기화
+if user.get('last_earn_date') != today_str:
+    user['daily_earnings'] = 0
+    user['last_earn_date'] = today_str
+
+# 금액 유효성 검사
+if 금액 < 100 or 금액 > 1000 or 금액 % 100 != 0:
+    await ctx.send("⚠️ 베팅은 100P 단위이며, 100P 이상 1000P 이하만 가능합니다!")
+    return
+
+# 수익 제한 확인 (이겼을 경우 수익만큼 제한)
+예상_수익 = 금액  # 예: 2배 게임이면 수익만큼
+if user['daily_earnings'] + 예상_수익 > 10000:
+    await ctx.send("🚫 오늘은 더 이상 수익을 얻을 수 없습니다. (일일 제한 10,000P)")
+    return
 
 @bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
