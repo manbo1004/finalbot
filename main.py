@@ -198,9 +198,6 @@ async def run_gamble_game(ctx, 금액: int, 승리확률: float, 보상배수: i
     update_user_data(str(ctx.author.id), user)
 
 # ===== 게임 명령어 =====
-@bot.command()
-async def 예시게임(ctx, 금액: int):
-    await run_gamble_game(ctx, 금액, 승리확률=0.45, 보상배수=2)
 
 @bot.command()
 async def 홀짝(ctx, 선택, 금액: int):
