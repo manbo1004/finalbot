@@ -6,85 +6,134 @@ from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
-# 환경 변수 로딩
+# ===== 환경 변수 =====
 load_dotenv()
 MONGO_URL = os.getenv("MONGO_URL")
 TOKEN = os.getenv("TOKEN")
 
-# MongoDB 연결
+# ===== MongoDB =====
 client = MongoClient(MONGO_URL)
 db = client['discord_bot']
 users_col = db['users']
 
-# Discord 봇 설정
+# ===== Discord Bot =====
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# 시간대 설정
+# ===== 시간대 =====
 KST = timezone(timedelta(hours=9))
 
-# 도박 공통 설정
+# ===== 도박 / 포인트 정책 =====
 MAX_BET = 1000
 MIN_BET = 100
 BET_UNIT = 100
 DAILY_EARN_LIMIT = 10000
 
-# 사용자 데이터 관리 함수
+# ===== 유틸 =====
+def today_str():
+    return datetime.now(KST).strftime('%Y-%m-%d')
+
 def get_user_data(user):
-    uid = str(user.id)
+    uid = str(user.id) if hasattr(user, "id") else str(user)
     data = users_col.find_one({"_id": uid})
     if not data:
-        data = {"_id": uid, "points": 0, "attended": False, "used_coupons": []}
+        data = {
+            "_id": uid,
+            "points": 0,
+            "attended": False,
+            "last_attend_date": None,
+            "streak": 0,
+            "daily_earnings": 0,
+            "last_earn_date": None,
+            "used_coupons": []
+        }
         users_col.insert_one(data)
     return data
 
 def update_user_data(uid, data):
     users_col.update_one({"_id": uid}, {"$set": data}, upsert=True)
 
-# 봇 시작 시 이벤트
+# ===== 봇 시작 =====
 @bot.event
 async def on_ready():
     print(f'✅ 봇 실행됨: {bot.user.name}')
-    reset_attendance.start()
+    reset_schedulers.start()
 
-# 자정 출석 초기화
+# ===== 자정/주간 스케줄러 =====
 @tasks.loop(minutes=1)
-async def reset_attendance():
-    now = datetime.utcnow() + timedelta(hours=9)
-    if now.hour == 0 and now.minute == 0:
-        users_col.update_many({}, {"$set": {"attended": False}})
-        print("🕛 자정 출석 초기화 완료")
+async def reset_schedulers():
+    now = datetime.now(KST)
 
-# 출석 명령어
+    # 매일 00:00 → 출석/일일수익 리셋
+    if now.hour == 0 and now.minute == 0:
+        users_col.update_many({}, {"$set": {"attended": False, "daily_earnings": 0, "last_earn_date": today_str()}})
+        print("🕛 자정 출석/일일수익 초기화 완료")
+
+    # 매주 월요일 00:00 → 열혈팬 주간 보너스 +1000P
+    if now.weekday() == 0 and now.hour == 0 and now.minute == 0:
+        awarded = 0
+        for guild in bot.guilds:
+            role = discord.utils.get(guild.roles, name='열혈팬') or discord.utils.get(guild.roles, name='열혈')
+            if not role:
+                continue
+            for member in role.members:
+                u = get_user_data(member)
+                u['points'] = u.get('points', 0) + 1000
+                update_user_data(str(member.id), u)
+                awarded += 1
+        print(f"🎁 열혈팬 주간 보너스 지급 완료 (+1000P) 대상 수: {awarded}")
+
+# ===== 출석 =====
 @bot.command()
 async def 출석(ctx):
     user = get_user_data(ctx.author)
-    if user.get("attended", False):
+    if user.get("attended") and user.get("last_attend_date") == today_str():
         await ctx.send("이미 오늘 출석하셨습니다!")
         return
-    user["points"] += 100
-    user["attended"] = True
-    update_user_data(str(ctx.author.id), user)
-    await ctx.send(f"{ctx.author.display_name}님 출석 완료! ⭐ 100포인트 지급!")
 
-# 포인트 확인
+    last = user.get("last_attend_date")
+    streak = user.get("streak", 0)
+    yesterday = (datetime.now(KST) - timedelta(days=1)).strftime('%Y-%m-%d')
+    if last == yesterday:
+        streak += 1
+    else:
+        streak = 1
+
+    base = 100
+    bonus = 0
+    if streak % 7 == 0:
+        bonus += 500
+    if streak % 30 == 0:
+        bonus += 3000
+
+    user["points"] = user.get("points", 0) + base + bonus
+    user["attended"] = True
+    user["last_attend_date"] = today_str()
+    user["streak"] = streak
+    update_user_data(str(ctx.author.id), user)
+
+    msg = f"{ctx.author.display_name}님 출석 완료! ⭐ +{base}P"
+    if bonus:
+        msg += f" (연속 보너스 +{bonus}P)"
+    await ctx.send(msg)
+
+# ===== 포인트 확인 =====
 @bot.command()
 async def 포인트(ctx):
     user = get_user_data(ctx.author)
-    await ctx.send(f"{ctx.author.display_name}님의 포인트: 💰 {user['points']}P")
+    await ctx.send(f"{ctx.author.display_name}님의 포인트: 💰 {user.get('points',0):,}P")
 
-# 포인트 지급
+# ===== 포인트 지급/차감 (관리자) =====
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def 지급(ctx, member: discord.Member, amount: int):
     user = get_user_data(member)
-    user['points'] += amount
+    user['points'] = user.get('points', 0) + amount
     update_user_data(str(member.id), user)
-    await ctx.send(f"{member.display_name}님께 💸 {amount}포인트를 지급했습니다!")
+    await ctx.send(f"{member.display_name}님께 💸 {amount:,}포인트를 지급했습니다!")
 
-# 포인트 차감
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def 차감(ctx, member: discord.Member, amount: int):
@@ -92,14 +141,14 @@ async def 차감(ctx, member: discord.Member, amount: int):
     if amount <= 0:
         await ctx.send("❌ 차감할 금액은 1 이상이어야 합니다.")
         return
-    if user['points'] < amount:
+    if user.get('points',0) < amount:
         await ctx.send("⚠️ 해당 유저의 포인트가 부족합니다.")
         return
     user['points'] -= amount
     update_user_data(str(member.id), user)
-    await ctx.send(f"🚫 {member.display_name}님의 포인트에서 {amount}P 차감했습니다!")
+    await ctx.send(f"🚫 {member.display_name}님의 포인트에서 {amount:,}P 차감했습니다!")
 
-# 포인트 랭킹
+# ===== 랭킹 =====
 @bot.command()
 async def 랭킹(ctx):
     top_users = users_col.find().sort("points", -1).limit(10)
@@ -112,27 +161,27 @@ async def 랭킹(ctx):
             name = member.display_name
         except:
             continue
-        result.append(f"{i}위 🏆 {name} - {user['points']}P")
+        result.append(f"{i}위 🏆 {name} - {user.get('points',0):,}P")
         i += 1
-    await ctx.send("🏅 포인트 랭킹\n" + "\n".join(result))
+    await ctx.send("🏅 포인트 랭킹\n" + ("\n".join(result) if result else "데이터가 없어요."))
 
-# 공통 도박 로직 템플릿
+# ===== 도박 공통 로직 =====
 async def run_gamble_game(ctx, 금액: int, 승리확률: float, 보상배수: int):
     user = get_user_data(ctx.author)
-    today_str = datetime.now(KST).strftime('%Y-%m-%d')
-    if user.get('last_earn_date') != today_str:
+    today = today_str()
+    if user.get('last_earn_date') != today:
         user['daily_earnings'] = 0
-        user['last_earn_date'] = today_str
+        user['last_earn_date'] = today
 
     if 금액 < MIN_BET or 금액 > MAX_BET or 금액 % BET_UNIT != 0:
         await ctx.send(f"⚠️ 베팅은 {BET_UNIT}P 단위이며, {MIN_BET}P 이상 {MAX_BET}P 이하만 가능합니다!")
         return
 
-    if user['points'] < 금액:
+    if user.get('points',0) < 금액:
         await ctx.send("❌ 보유한 포인트가 부족합니다!")
         return
 
-    if user['daily_earnings'] + 금액 > DAILY_EARN_LIMIT:
+    if user.get('daily_earnings',0) + 금액 > DAILY_EARN_LIMIT:
         await ctx.send(f"⛔ 오늘은 더 이상 수익을 얻을 수 없습니다. (일일 제한 {DAILY_EARN_LIMIT:,}P)")
         return
 
@@ -142,15 +191,15 @@ async def run_gamble_game(ctx, 금액: int, 승리확률: float, 보상배수: i
         winnings = 금액 * 보상배수
         user['points'] += winnings
         user['daily_earnings'] += 금액
-        await ctx.send(f"🎉 승리! +{금액}P 이득! (총 {winnings}P 반환)")
+        await ctx.send(f"🎉 승리! +{금액}P 이득! (총 {winnings:,}P 반환)")
     else:
         await ctx.send(f"💥 패배... {금액}P 손실!")
 
     update_user_data(str(ctx.author.id), user)
 
-# 게임 명령어들
+# ===== 게임 명령어 =====
 @bot.command()
-async def 에시게임(ctx, 금액: int):
+async def 예시게임(ctx, 금액: int):
     await run_gamble_game(ctx, 금액, 승리확률=0.45, 보상배수=2)
 
 @bot.command()
@@ -201,50 +250,64 @@ async def 주사위(ctx, 선택: int, 금액: int):
     else:
         await run_gamble_game(ctx, 금액, 승리확률=0.0, 보상배수=6)
 
-# 쿠폰 기능
+# ===== 쿠폰 =====
 @bot.command()
 async def 쿠폰(ctx, 쿠폰코드: str):
     user = get_user_data(ctx.author)
     if "used_coupons" not in user:
         user["used_coupons"] = []
-    if 쿠폰코드 != "sorryhosu":
+    if 쿠폰코드 != "welcomeyachtbro":
         await ctx.send("❌ 존재하지 않는 쿠폰입니다.")
         return
-    if "sorryhosu" in user["used_coupons"]:
+    if "welcomeyachtbro" in user["used_coupons"]:
         await ctx.send("⚠️ 이미 사용한 쿠폰입니다!")
         return
-    user["points"] += 500
-    user["used_coupons"].append("sorryhosu")
+    amount = random.choice(list(range(500, 1001, 100)))  # 500~1000, 100단위
+    user["points"] = user.get("points", 0) + amount
+    user["used_coupons"].append("welcomeyachtbro")
     update_user_data(str(ctx.author.id), user)
-    await ctx.send("🎁 쿠폰 적용 완료! 500P 지급되었습니다.")
+    await ctx.send(f"🎁 쿠폰 적용 완료! {amount:,}P 지급되었습니다.")
 
-# 상점 기능
+# ===== 상점 =====
 shop_items = {
-    "치킨": {"price": 30000, "description": "🍗 치킨 기프티콘"},
-    "피자": {"price": 45000, "description": "🍕 피자 기프티콘"},
-    "족발": {"price": 60000, "description": "🐷 족발 기프티콘"},
-    "메소": {"price": 30000, "description": "💰 500만 메소"},
-    "명찰": {"price": 10000, "description": "🏷️ 길드 명찰"},
+    "배민 3만원권": {"price": 30000, "description": "🍽 배민 3만원권 (운영진 수동 지급)"},
+    "배민 5만원권": {"price": 50000, "description": "🍽 배민 5만원권 (운영진 수동 지급)"},
+    "멤버십 1개월 구독권": {"price": 8000, "description": "🎫 멤버십 1개월 구독권 (운영진 수동 지급)"},
+    "방송 시참 우선권": {"price": 25000, "description": "🎙 방송 시참 우선권 (운영진 수동 지급)"},
 }
 
 @bot.command()
 async def 상점(ctx):
-    result = [f"{name} - {item['description']} ({item['price']}P)" for name, item in shop_items.items()]
-    await ctx.send("🛒 상점 목록:\n" + "\n".join(result))
+    await ctx.send(
+        "🛒 요트형 리워드 상점\n\n"
+        "🎁 교환 가능한 보상 목록\n\n"
+        "💎 실물 보상\n"
+        "- 배민 3만원권 — 30,000P\n"
+        "- 배민 5만원권 — 50,000P\n\n"
+        "🎙️ 방송 혜택\n"
+        "- 멤버십 1개월 구독권 — 8,000P\n"
+        "- 방송 시참 우선권 — 25,000P\n\n"
+        "포인트 확인: !포인트\n"
+        "구매 명령어: 예시) !구매 배민 3만원권"
+    )
 
 @bot.command()
-async def 구매(ctx, 아이템명: str):
-    아이템 = shop_items.get(아이템명)
-    if not 아이템:
-        await ctx.send("❌ 존재하지 않는 아이템입니다!")
+async def 구매(ctx, *, 아이템명: str):
+    item = shop_items.get(아이템명)
+    if not item:
+        await ctx.send("❌ 존재하지 않는 아이템입니다! (예: !구매 배민 3만원권)")
         return
     user = get_user_data(ctx.author)
-    if user['points'] < 아이템['price']:
+    if user.get('points', 0) < item['price']:
         await ctx.send("💸 포인트가 부족합니다!")
         return
-    user['points'] -= 아이템['price']
+    user['points'] -= item['price']
     update_user_data(str(ctx.author.id), user)
-    await ctx.send(f"🎉 {아이템['description']} 구매 완료! -{아이템['price']}P")
+    await ctx.send(
+        f"🎉 {ctx.author.display_name}님이 '{아이템명}'을(를) 구매했습니다!\n"
+        f"-{item['price']:,}P 차감되었습니다.\n\n"
+        "📦 운영진이 확인 후 수동 지급 예정입니다."
+    )
 
+# ===== 실행 =====
 bot.run(TOKEN)
-
